@@ -1,0 +1,730 @@
+---
+title: "Business Statistics End of Term Assessment IB94X0"
+author: "2243694"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+---
+
+This is to certify that the work I am submitting is my own. All external references and sources are clearly acknowledged and identified within the contents. I am aware of the University of Warwick regulation concerning plagiarism and collusion.
+
+No substantial part(s) of the work submitted here has also been submitted by me in other assessments for accredited courses of study, and I acknowledge that if this has been done an appropriate reduction in the mark I might otherwise have received will be made 
+
+```{r setup, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(emmeans)
+library(gridExtra)
+library(Hmisc)
+library(car)
+library(corrplot)
+```
+## Question 1 
+### Objective 
+#### * Understand Bike Hire Usage Trends
+#### * Assess the Impact of COVID-19 Measures
+#### * Control for Temporal Variations 
+#### * Explore Interaction Effects 
+
+Variable | Description
+----------- | --------------
+Hires | Number of bike hires
+schools_closed | Schools closed during covid period
+pubs_closed | Pubs closed during covid period
+shops_closed | Shops closed during covid period
+eating_places_closed | Eating places closed during covid period
+stay_at_home | Stay at home orders
+household_mixing_indoors_banned | Prohibits individuals from different households coming together and socializing inside a private residence
+wfh | Work from Home
+rule_of_6_indoors | Maximum indoors gathering limit to six individuals
+curfew | Activities and movements are restricted
+eat_out_to_help_out | Encourage people to dine outside by offering discounts on meals
+
+```{r}
+#Loading dataset
+dataset_bikes<-read.csv("London_COVID_bikes.csv")
+```
+## Data Preprocessing 
+```{r}
+#the dataset provide priority of labels for months in alphabetical order so to change those and converting each dataset attribute into a factor 
+custom_month_labels <- c("Jan","Feb","Mar","Apr", "May", "Jun","Jul", "Aug","Sep","Oct","Nov","Dec")
+dataset_bikes$month <- factor(dataset_bikes$month, levels = custom_month_labels)
+
+```
+```{r}
+custom_day_labels <- c("Sun","Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+dataset_bikes$day <- factor(dataset_bikes$day, levels = custom_day_labels)
+```
+
+```{r}
+# Check data structure
+summary(dataset_bikes)
+str(dataset_bikes)
+```
+
+
+
+```{r}
+#Checking Null values  
+sum(is.na(dataset_bikes))
+```
+```{r}
+#Remove duplicate records if any
+dataset_bikes<-unique(dataset_bikes)
+```
+
+
+
+```{r}
+# Plotting the data
+dataset_median<-dataset_bikes%>%
+  group_by(year,month)%>%
+  dplyr::summarize(median= median(Hires))
+ggplot(dataset_median)+geom_line(aes(x=month,y=median,group=factor(year),color=factor(year)))
+
+```
+
+
+
+We can Clearly see that the overall the number of hires are maximum for the month of June July and Aug in addition to this the data for 2010 and 2023 are not complete so we can easily remove those years. Also we have to measure the effect of covid measures on bike hires so we have to take the years that are significant for us which are from 2017 to 2021
+
+
+```{r}
+dataset_bikes<-dataset_bikes %>%
+  dplyr::filter(year %in% c(2017,2018,2019,2020,2021,2021))
+```
+
+## Time Wise plotting 
+```{r}
+#plotting the data 
+
+plot1<-ggplot(dataset_bikes, aes(x = Hires, fill = factor(year))) +
+  geom_histogram(alpha = 0.7, bins = 30,color="black",position = "stack")  +
+  geom_vline(xintercept = mean(dataset_bikes$Hires), linetype = "dashed", color = "red", linewidth = 1) +
+  labs(title = "Histogram of Hires by Year",
+       x = "Hires",
+       y = "Frequency") 
+plot2<-ggplot(dataset_bikes, aes(x = Hires, fill = factor(year))) +
+  geom_density(alpha = 0.4,color="black")  +
+  geom_vline(xintercept = mean(dataset_bikes$Hires), linetype = "dashed", color = "red", linewidth = 1) +
+  labs(title = "density of Hires by Year",
+       x = "Hires",
+       y = "Frequency") 
+grid.arrange(plot1,plot2)
+```
+
+The graphs shows a normal distribution of the data over the years and the red dotted line shows the average number of hires across the year and the whole of the distribution shows a normal distribution of data 
+
+
+
+### checking for outliers 
+```{r}
+
+ggplot(dataset_bikes)+geom_boxplot(aes(x=factor(year),y=Hires,fill=factor(year))) +  labs(title = "Boxplot of Bike Hires Over Years",
+       x = "Year",
+       y = "Number of Hires")
+``` 
+
+```{r}
+#removing outliers 
+threshold <-1.5
+data_clean<- dataset_bikes %>%
+  group_by(year) %>%
+  filter(Hires >= quantile(Hires, 0.25) - threshold * IQR(Hires),
+         Hires <= quantile(Hires, 0.75) + threshold * IQR(Hires))
+
+dataset_bikes<-data_clean
+``` 
+
+### The outliers have been removed now 
+
+```{r}
+ggplot(data_clean)+geom_boxplot(aes(x=factor(year),y=Hires,fill=factor(year))) +  labs(title = "Boxplot of Bike Hires Over Years",
+       x = "Year",
+       y = "Number of Hires")
+
+```
+
+### Year wise Analysis for number of hires 
+```{r}
+hires_lm <- lm(Hires~factor(year),data=dataset_bikes)
+```
+```{r}
+dataset_emm <- emmeans(hires_lm,~.factor(year))
+emmvar <- emmeans(hires_lm,~factor(year))
+contrast <- confint(pairs(dataset_emm))
+```
+```{r}
+ggplot(summary(emmvar), aes(x=factor(year), y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point() + geom_linerange() + 
+        labs(y="number of hires", x="year", subtitle="Error bars are 95% CIs", title="Sample Mean")
+ 
+```
+
+
+Graph shows overall increasing trend year-wise on number of Hires despite there was covid- measures or not the number of hires were increasing regardless of the factors affecting.The above observation seems a bit weird as ideally the bike hires should have decreased during covid due to covid restrictions but however the number of hires increased in the year 2021 . therefore lets check the above trends and focus on the years around the covid years that is from 2017 to 2021 to see the full affects . We are not taking years 2022 and beyond because the covid restrictions were relaxed in 2022 and afterwards
+
+
+### Performing T-test
+
+```{r}
+t.test(data_clean$Hires[data_clean$year==2019],data_clean$Hires[data_clean$year==2021])
+
+```
+
+The Welch Two Sample t-test compared the mean number of hires in 2019 and 2021, yielding a non-significant p-value of 0.06027. The 95% confidence interval ranged from -2734.25 to 57.97, suggesting no significant difference in means. While marginally significant, practical implications may require further investigation due to potential limitations.
+
+###### Analysis For the year 2020 (when covid started)
+```{r}
+dataset_2020<-dataset_bikes%>%
+  filter(year==2020)
+dataset_2021<-dataset_bikes%>%
+  filter(year==2021)
+```
+###### Analysis For the year 2020
+```{r}
+# The COVID started which resulted in this huge difference in the value of hires in year 2020 as compared to year 2019
+t.test(data_clean$Hires[data_clean$year==2019&data_clean$month=="Mar"],data_clean$Hires[data_clean$year==2020&data_clean$month=="Mar"])
+```
+
+The t-test comparing March 2019 and March 2020 Hires data indicates a significant difference in means (p = 2.363e-05). The 95% confidence interval for the true difference in Hires between the two periods is [4340.809 11054.288]. The mean Hires in March 2019 (25557.16) is significantly higher than in March 2020 (17859.61 ), suggesting a notable decline in hiring 
+
+
+```{r}
+#For year 2020 
+hires_lm_2020 <- lm(Hires~factor(month),data=dataset_2020) 
+emmvar_2020 <-  emmeans(hires_lm_2020,~.factor(month)) 
+contrast_2020<-confint(pairs(emmvar_2020))
+```
+
+```{r}
+ ggplot(summary(emmvar_2020), aes(x=factor(month), y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point(color="red") + geom_linerange() + 
+        labs(y="number of hires", x="month", subtitle="Error bars are 95% CIs", title="Year 2020")
+
+```
+
+Bikes hires suddenly dropped from feb to march showing that the covid restrictions were enforced in march 2020.The graph also shows rapid increase in hires form April to May is the result of people are hiring more bike in may as compared to April. Also after the month of september the number of hires were decreased drastically indicating a sharp decrease in the hire from sept to oct for the year 2020 which shows the second wave of covid restrictions.
+
+
+```{r}
+hires_lm_days_2020 <- lm(Hires~factor(day),data=dataset_2020)
+dataset_emm_days <- emmeans(hires_lm_days_2020,~.factor(day))
+confint_hires_days<-confint(pairs(dataset_emm_days))
+
+ggplot(summary(dataset_emm_days), aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point(color="red") + geom_linerange() + 
+        labs(y="number of hires", x="day", subtitle="Error bars are 95% CIs", title="Sample Mean")
+
+```
+
+The graph shows that the Saturday and Sunday have maximum number of hires as compared to rest of the days of the week for the year 2020
+
+##### Analysis for year 2021
+
+```{r} 
+
+hires_lm_2021 <- lm(Hires~factor(month),data=dataset_2021) 
+emmvar_2021 <-  emmeans(hires_lm_2021,~.factor(month)) 
+contrast_2021<-confint(pairs(emmvar_2021))
+ggplot(summary(emmvar_2021), aes(x=factor(month), y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point() + geom_linerange() + 
+        labs(y="number of hires", x="month", subtitle="Error bars are 95% CIs", title="Year 2021")
+ 
+```
+
+the above graph shows that the year 2021 has normal trend as compared to 2020 
+
+#####  Analysis After COVID-19 Measures 
+###### Correlation Analysis
+```{r}
+# Now for the effect of  Work From Home, Rule of 6 Indoors, and the Eat Out to Help Out scheme
+dataset_post_covid<-dataset_bikes%>%
+  filter(year>=2020)
+dataset_pre_covid<-dataset_bikes%>%
+  filter(year<2020)
+
+# Correlation analysis for dataset after COVID-19 measures
+dataset_corr <- as_tibble(dataset_post_covid) 
+(cor_matrix <- rcorr(as.matrix(select_if(dataset_corr,is.numeric))))
+corrplot(cor_matrix$r, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+
+```
+
+We can see that the correlation between Hires (post covid) and  Work from Home , Rule Of 6 Indoors and Eat Out to Help Out have is significant thus these attributes have affect on the number of hires and hence have to be included while building the model . The wfh has a small( -0.12 ) correlation on hires while rule_of_6_indoors have a slight(0.16 ) effect on hires and at last eat_out_to_help_out has a correlation very slight(0.09) correlation as well  
+
+
+
+##### Correlation before covid-19 measures 
+
+```{r}
+dataset_corr <- as_tibble(dataset_pre_covid) 
+(cor_matrix2<-rcorr(as.matrix(select_if(dataset_corr,is.numeric))))
+corrplot(cor_matrix2$r, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+
+```
+
+We can see from the correlation matrix that the correlation between Hires (pre covid) and  Work from Home , Rule Of 6 Indoors and Eat Out to Help Out have is not significant thus there attributes are not affecting our number of hires before the year 2020 and hence can not be included in our model 
+ 
+#### Linear Models (lm)
+
+```{r}
+# Building linear models for dataset after COVID-19 measure
+hire_lm_postcovid <- lm(Hires~year+month+day+wfh+eat_out_to_help_out+rule_of_6_indoors,data=dataset_post_covid)
+hire_lm_postcovid2 <- lm(Hires~year*month*day*wfh*eat_out_to_help_out*rule_of_6_indoors,data=dataset_post_covid)
+# anova test for model comparison
+anova(hire_lm_postcovid,hire_lm_postcovid2)
+
+```
+
+
+Our second model is more significantly different because lower p( < 3.989e-06) value and hence there are some interactions involved between wfh,eat_out_to_help_out,rule_of_6_indoors,  year,month and day . The p-value is highly significant, suggesting there are some interactions involved. Therefore we can say that 'wfh', 'rule of 6 indoors' and 'eat out to help out' do have an effect on the bike hires.
+
+```{r}
+# making lm model for dataset before covid measures
+hire_lm_precovid <- lm(Hires~year+month+day,data=dataset_pre_covid)
+hire_lm_precovid2 <- lm(Hires~year*month*day,data=dataset_pre_covid)
+anova(hire_lm_precovid,hire_lm_precovid2)
+ 
+```
+
+The p-value (0.6752) is greater than the typical significance level of 0.05. This suggests that the additional terms in Model 2 do not significantly improve the fit compared to Model 1 . Hence there are no interaction terms involved in the model.
+
+
+
+
+####Checking results with VIF
+
+```{r}
+#now we have selected the model 1 from Pre covid measures and model2 from after covid measures
+vif(hire_lm_precovid)
+vif(hire_lm_postcovid2,type="predictor")
+```
+
+The GVIF scores for year month day wfh eat_out_to_help_out and rule_of_6_indoors are low between 1 and 5 , so these can be used in the same model and hence our both models can use these attributes as predictors. 
+
+
+#### Control for Days, Months and Years
+
+we will have to check the control for the days month and years . For this we will make a foundation model and compare it with other models 
+```{r}
+lm_base_model <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out, dataset_post_covid)
+```
+this model will be used for further comparison for the effect of days month and years
+
+```{r}
+# model for seeing effect of  controlling days
+lm_model_control_days <-lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out+day, dataset_post_covid)
+
+#model for seeing effect of controlling months 
+lm_model_control_month <-lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out+month, dataset_post_covid)
+# model for seeing effect of controlling years 
+lm_model_control_year <-lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out+year, dataset_post_covid)
+```
+
+```{r}
+# for effect of days
+anova(lm_base_model,lm_model_control_days)
+
+```
+
+When we included the day attribute the fit of our model improved significantly (p= 0.004076). Therefore the effect of days is significant and needs to be controlled to improve the overall fit of the model
+
+```{r}
+# for effect of days
+anova(lm_base_model,lm_model_control_month)
+
+```
+
+When we included the month attribute the fit of our model improved significantly (p< 2.2e-16). Therefore the effect of month is significant and needs to be controlled to improve the overall fit of the model
+```{r}
+# for effect of days
+anova(lm_base_model,lm_model_control_year)
+
+```
+
+When we included the year attribute the fit of our model did not significantly improved (p= 0.0929 ). Therefore the effect of year is not significant and hence it is not necessary to control the effect of year
+
+
+
+
+### Visualizing day-wise bike hires before and after COVID-19 separately
+
+
+```{r}
+dataset_emm_pre_covid_days <- emmeans(hire_lm_precovid,~.factor(day))
+confint_hires_days_precovid<-confint(pairs(dataset_emm_pre_covid_days))
+
+
+days_before_covid<-ggplot(summary(dataset_emm_pre_covid_days), aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point(color="red") + geom_linerange() + 
+        labs(y="number of hires", x="day", subtitle="Error bars are 95% CIs", title="Bike Hires before covid ")
+```
+```{r}
+dataset_emm_post_covid_days <- emmeans(hire_lm_postcovid,~.factor(day))
+confint_hires_days_postcovid<-confint(pairs(dataset_emm_post_covid_days))
+
+days_after_covid<-ggplot(summary(dataset_emm_post_covid_days), aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point(color="red") + geom_linerange() + 
+        labs(y="number of hires", x="day", subtitle="Error bars are 95% CIs", title="Bike Hires After covid started ")
+grid.arrange(days_before_covid,days_after_covid,ncol=2)
+```
+
+
+After covid measures were introduced the People hire more on Friday and Saturday as compared to pre-covid measures where the Saturday and Sunday hires were the least this may be because they were using bikes to go to offices where as after covid the bike hires . Also the 95% confidence intervals have also increased
+
+#### Visualizing Month-wise bike hires before and after COVID-19 separately
+
+```{r}
+emmvar_pre <-  emmeans(hire_lm_precovid,~.factor(month)) 
+contrast_pre<-confint(pairs(emmvar_pre))
+ months_pre_covid<-ggplot(summary(emmvar_pre), aes(x=factor(month), y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point(color="red") + geom_linerange() + 
+        labs(y="number of hires", x="month", subtitle="Error bars are 95% CIs", title="Pre covid trend for bike hire")
+ 
+```
+```{r}
+emmvar_post <-  emmeans(hire_lm_postcovid,~.factor(month)) 
+contrast_post<-confint(pairs(emmvar_post))
+ months_post_covid<-ggplot(summary(emmvar_post), aes(x=factor(month), y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point(color="red") + geom_linerange() + 
+        labs(y="number of hires", x="month", subtitle="Error bars are 95% CIs", title="Post covid trend for bike hire")
+ grid.arrange(months_pre_covid,months_post_covid,ncol=2)
+ 
+```
+
+The was No change in the month wise predictions with covid and without covid measures hence after the covid measures were removed the trend become normal in long term  
+
+## Result 
+* When we plot data year-wise it was showing that there was an increasing trend in the number of hires as the year progress . Also it was also seen that in the month wise plotting the hires were minimum for the month of November, December , January and February. 
+* Before the year 2020 the hires were impacted by day,month and year whereas after year 2019 due to covid measures the hires were affected by there variables along with wfh , eat_out_to_help_out and rule_of_six_indoor 
+* When we did the anova test on pre-covid measures and post-covid the measures the variables introduced that are wfh , eat_out_to_help_out and rule_of_six_indoor have some effect on our hires after the covid measures where introduced hence they were doing some interactions with other attributes and hence impacting our hires which were not present before the covid measures were introduced  
+* There was a change in trend for day wise hires as before covid the number of hires week-vise were maximum for the week days and Saturday and Sunday have the least number of hires whereas after the covid-measures where introduced the hires were maximum for the Saturday and minimum for Monday
+
+## Conclusion 
+
+* We need to control the effect of the wfh , eat_out_to_help_out and rule_of_six_indoor because there were impacting our number of hires after the covid measures were introduced.
+* Also the effect of months and days were changed after the covid measures were introduced but for of years the trend become normal so there is not sufficient need to control  
+
+
+# Question 2
+
+
+
+Variable | Description
+------------- | -------------
+sold.by |  seller through which the book got sold
+publisher.type | Publisher who published the book
+genre | genre of the book
+avg.review | Average review scores of the book
+daily.sales | Average number of sales across all days 
+total.reviews | Total number of reviews 
+sale.price | Average price for which the book 
+
+
+## Objectives 
+### * Understand Sales Distribution
+### * Analyze the Impact of Average Review Scores
+### * Evaluate the Influence of Total Number of Reviews
+### * Assess the Effect of Sale Price on Sales
+### * Differentiate Sales Patterns Across Genres
+
+
+## Data Preprocessing
+```{r}
+#Loading dataset
+dataset_publisher<-read.csv("publisher_sales.csv",stringsAsFactor=TRUE)
+```
+```{r}
+#checking data
+str(dataset_publisher)
+summary(dataset_publisher)
+
+```
+
+
+
+```{r}
+# Plotting The data 
+ggplot(dataset_publisher) + geom_boxplot(width=0.7,aes(y = daily.sales,fill=genre)) +facet_wrap(genre~.) +labs(title = "Daily Sales by Genre", x = "Genre", y = "Daily Sales")
+```
+
+## Removing Outliers 
+
+```{r}
+
+#removing outliers 
+threshold <-1.5
+dataset_publisher<- dataset_publisher %>%
+  group_by(daily.sales) %>%
+  filter(daily.sales >= quantile(daily.sales, 0.25) - threshold * IQR(daily.sales),
+         daily.sales <= quantile(daily.sales, 0.75) + threshold * IQR(daily.sales))
+```
+
+## Plotting data to see trend 
+
+```{r}
+ggplot(dataset_publisher, aes(x = total.reviews, y = daily.sales, color = genre)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "glm", color = "black", linetype = "dashed") +  
+  labs(title = "Scatter Plot of Daily Sales vs. Total Reviews by Genre",
+       x = "Total Reviews",
+       y = "Daily Sales")
+```
+
+
+
+
+there are some negative values in daily.sales and hence needs to be removed also the avg.review and total.review have ) values to which they have some sales and hence they also need to be removed from the dataset
+
+```{r}
+# Also we can see there are some average reviews as 0 so removing those 
+dataset_publisher <- dataset_publisher %>%
+  filter(avg.review != 0 & total.reviews !=0 )
+```
+```{r}
+ggplot(dataset_publisher,aes(x=total.reviews,y=daily.sales))+geom_point(aes(color=genre),alpha=0.4) + geom_smooth(method=glm,color="black",linetype = "dashed")+labs(title = "Scatter Plot of Daily Sales vs. total Reviews by Genre",
+       x = "total Reviews",
+       y = "Daily Sales")
+```
+There is a positive relation between daily sales and total reviews that can be clearly seen from the graph and also from the graph we can notice that the total reviews of adult-fiction is highest after then non-fiction and  at the last is YA-fiction 
+
+
+## Calculate average daily sales and average total reviews by genre
+
+```{r}
+
+average_stats <- dataset_publisher %>%
+  group_by(genre) %>%
+  dplyr::summarize(avg_daily_sales = mean(daily.sales),
+            avg_total_reviews = mean(total.reviews))
+
+# Scatter plot with points for average values
+ggplot(dataset_publisher, aes(x = total.reviews, y = daily.sales, color = genre)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "glm", color = "black", linetype = "dashed") +
+  geom_point(data = average_stats, aes(x = avg_total_reviews, y = avg_daily_sales),
+             color="purple", size = 3) +  
+  labs(title = "Scatter Plot of Daily Sales vs. Total Reviews by Genre",
+       x = "Total Reviews",
+       y = "Daily Sales")
+```
+
+
+We can clearly see that the non fiction have less review on average and in comparison less daily sale on average and adult fiction have more total reviews on average and hence more daily sales and at last , on average the YA-fiction have the most total reviews on average and hence most daily sales on average .The purple dots indicate the average daily sales vs avearage total reviews for each genre
+
+
+
+```{r}
+ggplot(dataset_publisher, aes(x = daily.sales, fill = factor(genre))) +
+  geom_histogram(alpha = 0.5, bins = 30, color = "black", position = "identity") +
+  geom_vline(data = dataset_publisher %>%
+               group_by(genre) %>%
+               dplyr::summarize(mean_daily_sales = mean(daily.sales, na.rm = TRUE)),
+             aes(xintercept = mean_daily_sales, color = factor(genre)),
+             linetype = "dashed", linewidth = 1) + geom_vline(xintercept = mean(dataset_publisher$daily.sales), linetype = "dashed", color = "black", linewidth = 1)+
+  scale_color_manual(values = c("adult_fiction" = "red", "YA_fiction" = "blue", "non_fiction-Fi" = "green")) +
+  labs(title = "Distribution of Daily Sales by Genre",
+       x = "Daily Sales",
+       y = "Frequency")
+```
+
+The graph shows  that the non-fiction and YA-fiction have very difference in mean daily sales as compared to the adult-fiction which has similar daily sales as of whole dataset 
+
+```{r}
+#checking the corrrelation between the different attributes with daily sales 
+(cor_matrix<-rcorr(as.matrix(select_if(dataset_publisher,is.numeric))))
+corrplot(cor_matrix$r, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+```
+
+We can clearly interpret there is a weak negative correlation between average review  and daily sales.Total reviews exhibit a moderate positive correlation with daily sales, while sale price shows a moderate negative correlation.
+
+
+## Now checking the correlation for different genre
+```{r}
+
+dataset_publisher_non_fiction <- dataset_publisher %>%
+  filter(genre == "non_fiction")
+dataset_publisher_YA_fiction <- dataset_publisher %>%
+  filter(genre == "YA_fiction")
+dataset_publisher_adult_fiction <- dataset_publisher %>%
+  filter(genre == "adult_fiction")
+```
+
+
+```{r}
+#for non fiction 
+(cor_matrix1<-rcorr(as.matrix(select_if(dataset_publisher_non_fiction,is.numeric))))
+corrplot(cor_matrix1$r, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+```
+
+
+For Non-fiction the correlation between daily sales and average review and sale price is negligible whereas the total reviews have some positive correlation with daily sales  
+
+```{r}
+#for YA fiction 
+(cor_matrix2<-rcorr(as.matrix(select_if(dataset_publisher_YA_fiction,is.numeric))))
+corrplot(cor_matrix2$r, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+```
+
+For YA-fiction there is negligible correlation between average sales and sale price whereas total reviews has positive correlation and sales price has negative correlation 
+
+```{r}
+#for adult fiction 
+(cor_matrix3<-rcorr(as.matrix(select_if(dataset_publisher_adult_fiction,is.numeric))))
+corrplot(cor_matrix3$r, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+```
+For adult-fiction the correlation between average sales and daily price has negligible correlation whereas there is a positive correlation between total reviews and daily sales and some negative correlation between sale price and daily sales 
+
+```{r}
+plot1<-ggplot(dataset_publisher,aes(x=total.reviews,y=daily.sales))+geom_point(aes(color=genre),alpha=0.5)+geom_smooth(method=glm,aes(group=genre,color=genre)) + geom_smooth(method=glm,color="black",linetype = "dashed")+labs(title = "Scatter Plot of Daily Sales vs. Total Reviews by Genre",
+       x = "Total Reviews",
+       y = "Daily Sales")
+```
+```{r}
+plot2<-ggplot(dataset_publisher,aes(x=avg.review,y=daily.sales))+geom_point(aes(color=genre),alpha=0.5)+geom_smooth(method=glm,aes(group=genre,color=genre)) + geom_smooth(method=glm,color="black",linetype = "dashed")+labs(title = "Scatter Plot of Daily Sales vs. Average Reviews by Genre",
+       x = "Average Reviews",
+       y = "Daily Sales")
+```
+
+```{r}
+plot3<-ggplot(dataset_publisher,aes(x=sale.price,y=daily.sales))+geom_point(aes(color=genre),alpha=0.5)+geom_smooth(method=glm,aes(group=genre,color=genre)) + geom_smooth(method=glm,color="black",linetype = "dashed")+labs(title = "Scatter Plot of Daily Sales vs. sale pirce by Genre",
+       x = "sale price",
+       y = "Daily Sales")
+
+grid.arrange(plot1,plot2,plot3,ncol=2)
+```
+
+we can clearly see that sale price and total reviews have effect in our daily sales across genre whereas Average reviews does not have a significant effect on our daily sales and the correlation results that were found above can be easily seen from these graphs 
+
+
+## Making Lm models
+
+### Model for the avg review and total reviews 
+
+```{r}
+publisher_lm<-lm(daily.sales ~ avg.review+ total.reviews, data = dataset_publisher)
+publisher_lm2<-lm(daily.sales ~ avg.review*total.reviews, data = dataset_publisher)
+```
+
+### Checking summary for the models 
+
+```{r}
+summary(publisher_lm)
+# The intercept is estimated at 14.68 (p < 0.001), indicating the expected 'daily.sales' when both predictors are zero. 'avg.review' is not statistically significant (p = 0.337), suggesting it may not contribute significantly to predicting 'daily.sales.' Conversely, 'total.reviews' is highly significant (p < 0.001) with a positive coefficient of 0.556, implying a substantial positive impact on 'daily.sales.' The model has an overall explanatory power (R-squared) of 46.19%, suggesting it captures a notable portion of the variance in 'daily.sales.' The F-statistic (2564, p < 0.001) indicates the model's overall significance.
+
+summary(publisher_lm2)
+#The intercept is estimated at 12.69 (p = 0.174), representing the expected 'daily.sales' when both predictors are zero. 'avg.review' and its interaction with 'total.reviews' are not statistically significant (p = 0.969 and p = 0.824, respectively), suggesting that these terms may not contribute significantly to predicting 'daily.sales.' On the other hand, 'total.reviews' remains highly significant (p < 0.001) with a positive coefficient of 0.570, indicating a substantial positive impact on 'daily.sales.' The model's overall explanatory power (R-squared) remains at 46.19%, and the F-statistic (1709, p < 0.001) indicates the model's overall significance.
+```
+
+##### Performing anova test
+
+```{r}
+anova(publisher_lm,publisher_lm2)
+```
+
+In this case, the p-value is high(0.5546), indicating that the more Model 1 is  significantly better than the Model 2 because it does not have interactions
+
+```{r}
+vif(publisher_lm)
+vif(publisher_lm2)
+```
+
+The VIF matrix shows that there is no multi-Collinearity problem in the first model as the values are less than 5 . Whereas for second model the GVIF values are quite high hence there is multi-collinearity between the attributes hence this model is not correct
+
+
+
+
+
+
+## Part B
+```{r}
+publisher_lm3<-lm(daily.sales ~ sale.price+genre, data = dataset_publisher)
+publisher_lm4<-lm(daily.sales ~ sale.price*genre, data = dataset_publisher)
+```
+
+```{r}
+summary(publisher_lm3)
+# The intercept is 93.93 (p < 2e-16), indicating the expected 'daily.sales' when 'sale.price' and genre variables are zero. 'sale.price' has a significant negative effect on 'daily.sales' with an estimated coefficient of -1.43 (p < 2e-16), suggesting that higher sale prices are associated with lower daily sales. The genre variables, 'non_fiction' and 'YA_fiction,' also significantly impact 'daily.sales,' with estimated coefficients of -9.09 (p = 1.39e-13) and 30.44 (p < 2e-16), respectively. This implies that 'non_fiction' genre is associated with lower daily sales, while 'YA_fiction' genre is associated with higher daily sales. The model has an R-squared of 46.48%, indicating its overall explanatory power, and the F-statistic (1729, p < 2.2e-16) suggests the model is statistically significant.
+summary(publisher_lm4)
+#The intercept is 88.22 (p < 2e-16), representing the expected 'daily.sales' when all predictor variables are zero. 'sale.price' has a negative effect on 'daily.sales' with an estimated coefficient of -0.71 (p = 0.00453), indicating that higher sale prices are associated with lower daily sales. The main effects of genres, 'non_fiction' and 'YA_fiction,' also significantly impact 'daily.sales' with estimated coefficients of -23.69 (p = 1.81e-08) and 52.82 (p < 2e-16), respectively.Additionally, the interaction terms 'sale.price:genrenon_fiction' (p = 0.06634) and 'sale.price:genreYA_fiction' (p < 2.2e-16) suggest that the relationship between sale price and daily sales differs between genres. The model has an R-squared of 47.46%, indicating its overall explanatory power, and the F-statistic (1079, p < 2.2e-16) suggests the model is statistically significant.
+```
+
+```{r}
+anova(publisher_lm3,publisher_lm4)
+```
+
+The ANOVA test suggests that considering how 'sale.price' interacts with 'genre' significantly improves our ability to predict 'daily.sales.' It means that the combined effect of price and genre has a notable impact on daily sales.
+
+```{r}
+vif(publisher_lm3)
+vif(publisher_lm4)
+```
+Model 1 with GVIF values of 3.75 for both "sale.price" and "genre" demonstrates lower multicollinearity compared to Model 2. Model 2 exhibits higher GVIF values, notably for "genre" and the interaction term. Therefore, for improved stability and interpretability, Model 1 is recommended for the final evaluation, prioritizing lower multicollinearity in predictor variables.
+
+## Results
+
+### Plot between Daily sales and total reviews 
+```{r}
+# Create a scatter plot
+ggplot(dataset_publisher,aes(x=total.reviews,y=daily.sales))+geom_point() + geom_smooth(method=glm,color="blue",linetype = "dashed")+labs(title = "Scatter Plot of Daily Sales vs. Total Reviews ",
+       x = "Total Reviews",
+       y = "Daily Sales")
+```
+
+
+The graph has a positive slope and hence is in increasing direction showing that the books with more number of total Reviews have more sales across all genre.
+
+### Plot between Daily sales and average Reviews
+
+```{r}
+ggplot(dataset_publisher,aes(x=avg.review,y=daily.sales))+geom_point() + geom_smooth(method=glm,color="blue",linetype = "dashed")+labs(title = "Scatter Plot of Daily Sales vs. Average Reviews ",
+       x = "Average Reviews",
+       y = "Daily Sales")
+```
+
+This graph show almost a straight line indicating a small or negligible effect of Average Reviews on Daily sales 
+
+
+### Graph between daily sales and Genre 
+```{r}
+publ_sale<-lm(daily.sales~genre,data=dataset_publisher)
+dataset_emm_publisher <- emmeans(publisher_lm3,~.factor(genre))
+dataset_emm_publisher_summary<-summary(dataset_emm_publisher)
+dataset_emm_publisher_summary$model<-"Considering sale price and Genre"
+dataset_emm_publisher_uni <- emmeans(publ_sale,~.factor(genre))
+dataset_emm_publisher_uni_summary<-summary(dataset_emm_publisher_uni)
+dataset_emm_publisher_uni_summary$model<-"Only taking genre in consideration"
+two_models_emm_summary<-rbind(dataset_emm_publisher_uni_summary,dataset_emm_publisher_summary)
+
+ggplot(two_models_emm_summary, aes(x=genre, y=emmean, ymin=lower.CL, ymax=upper.CL, col=model)) + geom_point() + geom_linerange() + labs(title="Graph between daily sales and Genre",x="Genre", y="Daily Sales", col="Model")
+```
+
+The graph shows that there is a positive effect of daily sales when considering sale price in consideration for adult fiction and YA fiction while for non-fiction it has a negative effect.
+
+## Conclusions 
+
+Correlation Between Daily Sales and Total Reviews:
+
+*Positive Correlation: Daily sales and total reviews exhibit a strong positive correlation, suggesting that as the number of reviews increases, daily sales tend to rise. This underscores the importance of customer feedback in driving eBook sales.
+Impact of Average Reviews on Daily Sales:
+
+Non-Significant Negative Effect: The average review scores do not have a statistically significant impact on daily sales. This implies that variations in average review scores are not indicative of changes in daily sales, emphasizing the need to focus on other factors influencing consumer behavior.
+
+
+*Influence of Sale Price and Genre on Daily Sales:
+   *Significant Negative Effect of Sale Price: Higher sale prices are associated with reduced daily sales, indicating a negative impact on consumer purchasing decisions. Specifically, a one-unit increase in sale price results in a four-unit decrease in daily sales.
+   *Genre-Specific Trends: The genre of eBooks plays a significant role in daily sales. For adult fiction and YA fiction, higher prices correlate with lower sales, while non-fiction exhibits an opposing trend. This underscores the necessity for tailored marketing strategies based on eBook genres to optimize sales performance.
+
+## Refrences
+
+* Dalgaard, P. (2008) Introductory Statistics with R, 2nd edn. New York: Springer.
+
+* Howell, D.C. (2017) Fundamental Statistics for the Behavioral Sciences, 9th edn. Belmont, CA: Duxbury Press.
+
+* Stack Overflow. Available at: https://stackoverflow.com/
+
+* Warwick Business School Business Statistics Lecture Resources. Available at: https://my.wbs.ac.uk/
+
+
